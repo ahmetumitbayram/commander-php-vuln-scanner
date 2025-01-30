@@ -1,9 +1,5 @@
 import os
 import re
-import json
-import logging
-from concurrent.futures import ThreadPoolExecutor
-import argparse
 
 # Banner
 banner = """
@@ -17,64 +13,56 @@ banner = """
 """
 
 print(banner)
-
-
-# Log ayarları
-logging.basicConfig(filename="scanner.log", level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+user_directory = input("Lütfen dizin yolunu girin: ")
 
 dangerous_functions = [
-    'shell_exec', 'eval', 'exec', 'system', 'passthru', 'popen', 'proc_open',
-    'pcntl_exec', 'assert', 'preg_replace', 'create_function',
-    'include', 'include_once', 'require', 'require_once',
-    'file_put_contents', 'fwrite', 'mkdir', 'unlink', 'copy'
+    'shell_exec', 'eval', 'exec',
+    'system', 'passthru', 'popen',
+    'proc_open', 'pcntl_exec', 'assert',
+    'preg_replace', 'create_function',
+    'include', 'include_once', 'require',
+    'require_once', 'file_put_contents',
+    'fwrite', 'fputs', 'mkdir', 'rmdir',
+    'unlink', 'rename', 'copy', 'move_uploaded_file'
 ]
 
 user_input_sources = ['$_GET', '$_POST', '$_REQUEST', '$_COOKIE', '$_FILES', '$_SERVER']
-results = []
-
-def analyze_file(file_path):
-    user_inputs = {}
-    try:
-        with open(file_path, 'r', encoding='utf-8') as f:
-            content = f.readlines()
-            for idx, line in enumerate(content):
-                for source in user_input_sources:
-                    if source in line:
-                        variables = re.findall(r'\$\w+', line)
-                        for var in variables:
-                            user_inputs[var] = True
-                
-                for function in dangerous_functions:
-                    if re.search(r'\b{}\b\s*\('.format(function), line):
-                        variables = re.findall(r'\$\w+', line)
-                        for var in variables:
-                            if var in user_inputs and user_inputs[var]:
-                                results.append({
-                                    "file": file_path,
-                                    "function": function,
-                                    "line": idx+1,
-                                    "variable": var,
-                                    "status": "VULNERABLE"
-                                })
-    except Exception as e:
-        logging.error(f"Hata oluştu: {file_path} - {str(e)}")
+user_inputs = {}
 
 def scan_directory(directory):
-    with ThreadPoolExecutor(max_workers=10) as executor:
-        for root, dirs, files in os.walk(directory):
-            for file in files:
-                if file.endswith('.php'):
-                    file_path = os.path.join(root, file)
-                    executor.submit(analyze_file, file_path)
+    for root, dirs, files in os.walk(directory):
+        for file in files:
+            if file.endswith('.php'):
+                file_path = os.path.join(root, file)
+                try:
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        content = f.readlines()
+                        for idx, line in enumerate(content):
+                            # If the line has user input source, mark the variable as tainted
+                            for source in user_input_sources:
+                                if source in line:
+                                    variable = re.findall('\$[a-zA-Z_][a-zA-Z0-9_]*', line)
+                                    if variable:
+                                        for var in variable:
+                                            user_inputs[var] = True
+                            # If the line has a dangerous function, check if the variable is tainted
+                            for function in dangerous_functions:
+                                pattern = r'\b{}\b\s*\('.format(function)
+                                match = re.search(pattern, line)
+                                if match:
+                                    variable = re.findall('\$[a-zA-Z_][a-zA-Z0-9_]*', line)
+                                    if variable:
+                                        for var in variable:
+                                            if var in user_inputs and user_inputs[var]:
+                                                print(f"| {file_path} | {function} | {idx+1} | {var} | VULNERABLE |")
+                                                # After using the variable in a dangerous function, mark it as untainted
+                                                user_inputs[var] = False
+                except UnicodeDecodeError:
+                    pass
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="PHP Güvenlik Tarayıcısı")
-    parser.add_argument("directory", help="Taranacak dizinin yolu")
-    parser.add_argument("--output", "-o", help="Sonucu JSON olarak kaydet")
-    args = parser.parse_args()
+if os.path.isdir(user_directory):
+    scan_directory(user_directory)
+else:
+    print("Geçersiz dizin yolunu girdiniz.")
 
-    scan_directory(args.directory)
-
-    if args.output:
-        with open(args.output, "w") as f:
-            json.dump(results, f, indent=4)
+bu kodu daha nasıl geliştirebilirim.
