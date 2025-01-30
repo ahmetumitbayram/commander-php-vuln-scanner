@@ -64,5 +64,3 @@ if os.path.isdir(user_directory):
     scan_directory(user_directory)
 else:
     print("Geçersiz dizin yolunu girdiniz.")
-
-bu kodu daha nasıl geliştirebilirim.
